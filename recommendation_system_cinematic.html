@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CineMatch — AI Movie Recommendations</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --gold: #c9a84c;
+    --gold-light: #e8c97a;
+    --gold-dim: #7a6130;
+    --cream: #f5efe0;
+    --dark: #0a0a0f;
+    --dark2: #12121a;
+    --dark3: #1a1a26;
+    --dark4: #22223a;
+    --red: #c0392b;
+    --red-dim: #7a2318;
+    --text-main: #f0e8d0;
+    --text-dim: #8a7f6a;
+    --text-muted: #4a4535;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--dark);
+    color: var(--text-main);
+    font-family: 'Barlow', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── CINEMATIC BACKGROUND ── */
+  .bg-scene {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    overflow: hidden;
+  }
+  .bg-scene::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(201,168,76,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 80% at 80% 90%, rgba(192,57,43,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 100% 100% at 50% 50%, rgba(10,10,15,0) 0%, rgba(10,10,15,0.95) 100%);
+  }
+
+  /* Film strip left */
+  .film-strip {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 48px;
+    display: flex; flex-direction: column; gap: 0;
+  }
+  .film-strip.left { left: 0; background: rgba(201,168,76,0.04); border-right: 1px solid rgba(201,168,76,0.08); }
+  .film-strip.right { right: 0; background: rgba(201,168,76,0.04); border-left: 1px solid rgba(201,168,76,0.08); }
+  .film-hole {
+    width: 24px; height: 18px; margin: 8px auto;
+    border: 1.5px solid rgba(201,168,76,0.15);
+    border-radius: 3px; flex-shrink: 0;
+  }
+
+  /* Scanlines */
+  .scanlines {
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px);
+    pointer-events: none;
+  }
+
+  /* Stars */
+  .stars {
+    position: absolute; inset: 0;
+  }
+  .star-dot {
+    position: absolute;
+    width: 2px; height: 2px;
+    background: rgba(201,168,76,0.4);
+    border-radius: 50%;
+    animation: twinkle var(--d, 3s) ease-in-out infinite var(--delay, 0s);
+  }
+  @keyframes twinkle {
+    0%,100% { opacity: 0.2; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.5); }
+  }
+
+  /* Spotlight beams */
+  .spotlight {
+    position: absolute;
+    top: -100px;
+    width: 300px; height: 600px;
+    transform-origin: top center;
+    opacity: 0.04;
+    background: linear-gradient(to bottom, rgba(201,168,76,0.8), transparent);
+    clip-path: polygon(40% 0%, 60% 0%, 100% 100%, 0% 100%);
+    animation: sway 8s ease-in-out infinite;
+  }
+  .spotlight.s1 { left: 15%; animation-delay: 0s; }
+  .spotlight.s2 { left: 60%; animation-delay: -4s; }
+  @keyframes sway {
+    0%,100% { transform: rotate(-5deg); }
+    50% { transform: rotate(5deg); }
+  }
+
+  /* ── LAYOUT ── */
+  .wrapper {
+    position: relative; z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 3rem 2rem 4rem;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    text-align: center;
+    margin-bottom: 3rem;
+    animation: fadeDown 0.8s ease both;
+  }
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .header-eyebrow {
+    font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--gold); font-weight: 500; margin-bottom: 0.75rem;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+  }
+  .header-eyebrow::before, .header-eyebrow::after {
+    content: ''; flex: 1; max-width: 80px; height: 1px;
+    background: linear-gradient(to right, transparent, var(--gold-dim));
+  }
+  .header-eyebrow::after { background: linear-gradient(to left, transparent, var(--gold-dim)); }
+
+  .header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 900;
+    color: var(--cream);
+    letter-spacing: -0.01em;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .header h1 span { color: var(--gold); font-style: italic; }
+  .header-sub {
+    font-size: 14px; color: var(--text-dim); font-weight: 300; letter-spacing: 0.05em;
+  }
+
+  /* Gold divider */
+  .gold-divider {
+    display: flex; align-items: center; gap: 10px;
+    margin: 1.5rem 0;
+  }
+  .gold-divider::before, .gold-divider::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(to right, transparent, var(--gold-dim), transparent);
+  }
+  .gold-divider-icon { color: var(--gold); font-size: 14px; }
+
+  /* ── STEP CARDS ── */
+  .step-section {
+    margin-bottom: 2rem;
+    animation: fadeUp 0.6s ease both;
+  }
+  .step-section:nth-child(2) { animation-delay: 0.1s; }
+  .step-section:nth-child(3) { animation-delay: 0.2s; }
+  .step-section:nth-child(4) { animation-delay: 0.3s; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .step-label {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 1rem;
+  }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid var(--gold-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: var(--gold);
+    flex-shrink: 0;
+  }
+  .step-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--gold-dim);
+  }
+
+  /* ── GENRE PILLS ── */
+  .genre-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .genre-btn {
+    font-size: 12px; font-weight: 500; letter-spacing: 0.06em;
+    padding: 6px 16px; border-radius: 2px;
+    border: 1px solid rgba(201,168,76,0.2);
+    background: rgba(201,168,76,0.04);
+    color: var(--text-dim); cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .genre-btn:hover { border-color: rgba(201,168,76,0.5); color: var(--gold-light); }
+  .genre-btn.active {
+    background: rgba(201,168,76,0.12);
+    border-color: var(--gold);
+    color: var(--gold-light);
+    box-shadow: 0 0 12px rgba(201,168,76,0.15);
+  }
+
+  /* ── MOVIE CARDS ── */
+  .movies-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .movie-card {
+    background: linear-gradient(135deg, rgba(26,26,38,0.9), rgba(18,18,26,0.95));
+    border: 1px solid rgba(201,168,76,0.1);
+    border-radius: 4px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.25s;
+    min-width: 120px; flex: 1;
+    position: relative; overflow: hidden;
+  }
+  .movie-card::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(201,168,76,0.05), transparent);
+    opacity: 0; transition: opacity 0.25s;
+  }
+  .movie-card:hover { border-color: rgba(201,168,76,0.35); transform: translateY(-2px); }
+  .movie-card:hover::before { opacity: 1; }
+  .movie-card.liked {
+    border-color: var(--gold);
+    background: linear-gradient(135deg, rgba(201,168,76,0.1), rgba(18,18,26,0.95));
+    box-shadow: 0 4px 20px rgba(201,168,76,0.15), inset 0 0 30px rgba(201,168,76,0.05);
+  }
+  .movie-card.liked .card-title { color: var(--gold-light); }
+  .card-emoji { font-size: 20px; margin-bottom: 6px; }
+  .card-title {
+    font-size: 12px; font-weight: 500; color: var(--text-main);
+    line-height: 1.3; margin-bottom: 4px;
+    font-family: 'Barlow', sans-serif;
+  }
+  .card-year { font-size: 10px; color: var(--text-muted); }
+  .card-rating {
+    display: flex; align-items: center; gap: 3px;
+    font-size: 11px; color: var(--gold-dim); margin-top: 5px;
+  }
+  .liked-count {
+    font-size: 12px; color: var(--text-muted);
+    margin-top: 0.75rem; letter-spacing: 0.05em;
+  }
+
+  /* ── METHOD TOGGLE ── */
+  .method-toggle { display: flex; gap: 0; border: 1px solid rgba(201,168,76,0.2); border-radius: 3px; overflow: hidden; width: fit-content; }
+  .method-btn {
+    font-size: 12px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 8px 20px;
+    background: transparent; color: var(--text-muted);
+    border: none; border-right: 1px solid rgba(201,168,76,0.15);
+    cursor: pointer; transition: all 0.2s;
+  }
+  .method-btn:last-child { border-right: none; }
+  .method-btn:hover { background: rgba(201,168,76,0.06); color: var(--text-dim); }
+  .method-btn.active {
+    background: rgba(201,168,76,0.12);
+    color: var(--gold-light);
+  }
+
+  /* ── CTA BUTTON ── */
+  .cta-wrap { margin-top: 1.5rem; }
+  .get-recs-btn {
+    position: relative; overflow: hidden;
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+    padding: 13px 36px;
+    background: linear-gradient(135deg, var(--gold-dim), var(--gold));
+    color: var(--dark);
+    border: none; border-radius: 2px;
+    cursor: pointer; transition: all 0.25s;
+  }
+  .get-recs-btn::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .get-recs-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(201,168,76,0.35); }
+  .get-recs-btn:hover::after { opacity: 1; }
+  .get-recs-btn:active { transform: translateY(0); }
+
+  /* ── RECOMMENDATIONS ── */
+  .recs-section { margin-top: 2rem; }
+  .recs-header {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem; font-style: italic;
+    color: var(--cream); margin-bottom: 1.25rem;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .recs-header::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(to right, var(--gold-dim), transparent);
+  }
+
+  .rec-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, rgba(22,22,34,0.95), rgba(14,14,22,0.98));
+    border: 1px solid rgba(201,168,76,0.12);
+    border-left: 3px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 10px;
+    display: flex; gap: 14px; align-items: flex-start;
+    transition: all 0.2s;
+    animation: slideIn 0.4s ease both;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .rec-card:nth-child(2) { animation-delay: 0.05s; border-left-color: var(--gold); }
+  .rec-card:nth-child(3) { animation-delay: 0.1s; }
+  .rec-card:nth-child(4) { animation-delay: 0.15s; }
+  .rec-card:nth-child(5) { animation-delay: 0.2s; }
+  .rec-card:nth-child(6) { animation-delay: 0.25s; }
+  .rec-card:hover { border-color: rgba(201,168,76,0.3); transform: translateX(3px); }
+  .rec-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(to right, var(--gold-dim), transparent);
+  }
+  .rec-emoji { font-size: 24px; min-width: 32px; padding-top: 2px; }
+  .rec-info { flex: 1; }
+  .rec-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px; font-weight: 700; color: var(--cream);
+    margin-bottom: 3px;
+  }
+  .rec-year { font-size: 11px; color: var(--text-muted); font-weight: 400; font-family: 'Barlow',sans-serif; }
+  .rec-why { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 4px; }
+  .rec-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 1px;
+    font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .badge-genre { background: rgba(201,168,76,0.1); color: var(--gold-dim); border: 1px solid rgba(201,168,76,0.2); }
+  .badge-score { background: rgba(192,57,43,0.15); color: #e07060; border: 1px solid rgba(192,57,43,0.25); }
+  .badge-method { background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.06); }
+
+  .score-bar-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 80px; }
+  .score-val {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px; font-weight: 700; color: var(--gold);
+    line-height: 1;
+  }
+  .score-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .score-bar { width: 60px; height: 3px; background: rgba(201,168,76,0.1); border-radius: 2px; margin-top: 4px; }
+  .score-fill { height: 100%; border-radius: 2px; background: linear-gradient(to right, var(--gold-dim), var(--gold)); }
+
+  .empty-state {
+    text-align: center; padding: 3rem 1rem;
+    color: var(--text-muted); font-style: italic;
+    font-family: 'Playfair Display', serif; font-size: 15px;
+  }
+
+  /* Grain overlay */
+  .grain {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-size: 128px;
+  }
+
+  /* Corner ornaments */
+  .corner { position: fixed; width: 60px; height: 60px; pointer-events: none; z-index: 1; }
+  .corner.tl { top: 16px; left: 64px; border-top: 1px solid rgba(201,168,76,0.2); border-left: 1px solid rgba(201,168,76,0.2); }
+  .corner.tr { top: 16px; right: 64px; border-top: 1px solid rgba(201,168,76,0.2); border-right: 1px solid rgba(201,168,76,0.2); }
+  .corner.bl { bottom: 16px; left: 64px; border-bottom: 1px solid rgba(201,168,76,0.2); border-left: 1px solid rgba(201,168,76,0.2); }
+  .corner.br { bottom: 16px; right: 64px; border-bottom: 1px solid rgba(201,168,76,0.2); border-right: 1px solid rgba(201,168,76,0.2); }
+</style>
+</head>
+<body>
+
+<!-- Cinematic Background -->
+<div class="bg-scene">
+  <div class="spotlight s1"></div>
+  <div class="spotlight s2"></div>
+  <div class="stars" id="stars"></div>
+  <div class="film-strip left" id="filmL"></div>
+  <div class="film-strip right" id="filmR"></div>
+  <div class="scanlines"></div>
+</div>
+
+<!-- Grain -->
+<div class="grain"></div>
+
+<!-- Corner ornaments -->
+<div class="corner tl"></div>
+<div class="corner tr"></div>
+<div class="corner bl"></div>
+<div class="corner br"></div>
+
+<!-- App -->
+<div class="wrapper">
+
+  <div class="header">
+    <div class="header-eyebrow">✦ Artificial Intelligence ✦</div>
+    <h1>Cine<span>Match</span></h1>
+    <p class="header-sub">AI-Powered Movie Recommendation Engine</p>
+  </div>
+
+  <div class="gold-divider"><span class="gold-divider-icon">◆</span></div>
+
+  <!-- Step 1 -->
+  <div class="step-section">
+    <div class="step-label">
+      <div class="step-num">1</div>
+      <div class="step-title">Select your favorite genres</div>
+    </div>
+    <div class="genre-grid" id="genreGrid"></div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step-section">
+    <div class="step-label">
+      <div class="step-num">2</div>
+      <div class="step-title">Like movies you've enjoyed</div>
+    </div>
+    <div class="movies-row" id="moviesRow"></div>
+    <p class="liked-count" id="likedCount">0 films selected</p>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step-section">
+    <div class="step-label">
+      <div class="step-num">3</div>
+      <div class="step-title">Choose filtering method</div>
+    </div>
+    <div class="method-toggle" id="methodToggle">
+      <button class="method-btn active" data-method="hybrid">Hybrid</button>
+      <button class="method-btn" data-method="content">Content</button>
+      <button class="method-btn" data-method="collab">Collaborative</button>
+    </div>
+  </div>
+
+  <div class="cta-wrap">
+    <button class="get-recs-btn" onclick="getRecommendations()">✦ Generate Recommendations</button>
+  </div>
+
+  <div class="recs-section" id="recsSection"></div>
+
+</div>
+
+<script>
+// Generate stars
+(function(){
+  var s = document.getElementById('stars');
+  for(var i=0;i<60;i++){
+    var d = document.createElement('div');
+    d.className='star-dot';
+    d.style.cssText='left:'+Math.random()*100+'%;top:'+Math.random()*100+'%;'
+      +'--d:'+(2+Math.random()*4)+'s;--delay:-'+(Math.random()*4)+'s;'
+      +'opacity:'+(0.2+Math.random()*0.5);
+    s.appendChild(d);
+  }
+})();
+
+// Generate film holes
+(function(){
+  ['filmL','filmR'].forEach(function(id){
+    var el = document.getElementById(id);
+    for(var i=0;i<60;i++){
+      var h=document.createElement('div'); h.className='film-hole'; el.appendChild(h);
+    }
+  });
+})();
+
+var likedMovies = new Set();
+var likedGenres = new Set();
+var currentMethod = 'hybrid';
+
+var GENRES = ['Action','Comedy','Drama','Sci-Fi','Horror','Romance','Thriller','Animation','Documentary','Fantasy'];
+
+var MOVIES = [
+  {id:1,title:'The Dark Knight',genres:['Action','Thriller'],rating:9.0,emoji:'🦇',year:2008,tags:['hero','dark','crime']},
+  {id:2,title:'Inception',genres:['Sci-Fi','Thriller'],rating:8.8,emoji:'🌀',year:2010,tags:['mind-bending','surreal','heist']},
+  {id:3,title:'Toy Story',genres:['Animation','Comedy'],rating:8.3,emoji:'🤠',year:1995,tags:['family','friendship','fun']},
+  {id:4,title:'The Godfather',genres:['Drama','Thriller'],rating:9.2,emoji:'🌹',year:1972,tags:['crime','power','family']},
+  {id:5,title:'Interstellar',genres:['Sci-Fi','Drama'],rating:8.6,emoji:'🪐',year:2014,tags:['space','time','emotional']},
+  {id:6,title:'Get Out',genres:['Horror','Thriller'],rating:7.7,emoji:'👁',year:2017,tags:['social','suspense','twist']},
+  {id:7,title:'La La Land',genres:['Romance','Drama'],rating:8.0,emoji:'🎷',year:2016,tags:['music','dreams','nostalgia']},
+  {id:8,title:'Avengers: Endgame',genres:['Action','Sci-Fi'],rating:8.4,emoji:'⚡',year:2019,tags:['hero','epic','team']},
+];
+
+var CATALOG = [
+  {id:101,title:'Oppenheimer',genres:['Drama','Thriller'],rating:8.9,emoji:'☢️',year:2023,tags:['history','power','science']},
+  {id:102,title:'Dune',genres:['Sci-Fi','Fantasy'],rating:8.0,emoji:'🏜',year:2021,tags:['space','epic','hero']},
+  {id:103,title:'Knives Out',genres:['Thriller','Comedy'],rating:7.9,emoji:'🔪',year:2019,tags:['mystery','clever','twist']},
+  {id:104,title:'Spider-Man: Spider-Verse',genres:['Animation','Action'],rating:8.4,emoji:'🕷',year:2018,tags:['hero','family','fun']},
+  {id:105,title:'Parasite',genres:['Drama','Thriller'],rating:8.5,emoji:'🏚',year:2019,tags:['social','dark','twist']},
+  {id:106,title:'Mad Max: Fury Road',genres:['Action','Sci-Fi'],rating:8.1,emoji:'🔥',year:2015,tags:['survival','intense','epic']},
+  {id:107,title:'Hereditary',genres:['Horror','Drama'],rating:7.3,emoji:'🕯',year:2018,tags:['dark','family','suspense']},
+  {id:108,title:'Everything Everywhere All at Once',genres:['Sci-Fi','Comedy','Drama'],rating:8.0,emoji:'🥢',year:2022,tags:['mind-bending','family','surreal']},
+  {id:109,title:'Portrait of a Lady on Fire',genres:['Romance','Drama'],rating:8.1,emoji:'🎨',year:2019,tags:['love','art','nostalgia']},
+  {id:110,title:'Coco',genres:['Animation','Drama'],rating:8.4,emoji:'💀',year:2017,tags:['family','music','emotional']},
+  {id:111,title:'No Country for Old Men',genres:['Thriller','Drama'],rating:8.2,emoji:'🎲',year:2007,tags:['crime','dark','slow-burn']},
+  {id:112,title:'Eternal Sunshine',genres:['Romance','Sci-Fi'],rating:8.3,emoji:'☀️',year:2004,tags:['love','mind-bending','emotional']},
+];
+
+var USER_PROFILES = [
+  {liked:[1,2,5,8],also:[101,102,106,108]},
+  {liked:[3,7,8],also:[104,108,110,109]},
+  {liked:[4,1,6],also:[105,111,103,107]},
+  {liked:[2,5,6],also:[108,112,102,107]},
+  {liked:[3,4,7],also:[109,110,111,105]},
+];
+
+function renderGenres(){
+  var g=document.getElementById('genreGrid');
+  g.innerHTML=GENRES.map(function(genre){
+    return '<button class="genre-btn" data-genre="'+genre+'">'+genre+'</button>';
+  }).join('');
+  g.querySelectorAll('.genre-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var genre=this.getAttribute('data-genre');
+      if(likedGenres.has(genre)){likedGenres.delete(genre);this.classList.remove('active');}
+      else{likedGenres.add(genre);this.classList.add('active');}
+    });
+  });
+}
+
+function renderMovies(){
+  var r=document.getElementById('moviesRow');
+  r.innerHTML=MOVIES.map(function(m){
+    return '<div class="movie-card" data-id="'+m.id+'">'
+      +'<div class="card-emoji">'+m.emoji+'</div>'
+      +'<div class="card-title">'+m.title+'</div>'
+      +'<div class="card-year">'+m.year+'</div>'
+      +'<div class="card-rating">★ '+m.rating+'</div>'
+      +'</div>';
+  }).join('');
+  r.querySelectorAll('.movie-card').forEach(function(card){
+    card.addEventListener('click',function(){
+      var id=parseInt(this.getAttribute('data-id'));
+      if(likedMovies.has(id)){likedMovies.delete(id);this.classList.remove('liked');}
+      else{likedMovies.add(id);this.classList.add('liked');}
+      var n=likedMovies.size;
+      document.getElementById('likedCount').textContent=n+' film'+(n!==1?'s':'')+' selected';
+    });
+  });
+}
+
+document.getElementById('methodToggle').querySelectorAll('.method-btn').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    currentMethod=this.getAttribute('data-method');
+    document.getElementById('methodToggle').querySelectorAll('.method-btn').forEach(function(b){b.classList.remove('active');});
+    this.classList.add('active');
+  });
+});
+
+function computeContentScore(candidate,likedList){
+  var gf={};
+  likedList.forEach(function(m){m.genres.forEach(function(g){gf[g]=(gf[g]||0)+2;});});
+  likedGenres.forEach(function(g){gf[g]=(gf[g]||0)+3;});
+  var tf={};
+  likedList.forEach(function(m){m.tags.forEach(function(t){tf[t]=(tf[t]||0)+1;});});
+  var score=0;var mg=[];
+  candidate.genres.forEach(function(g){if(gf[g]){score+=gf[g]*10;mg.push(g);}});
+  candidate.tags.forEach(function(t){if(tf[t])score+=tf[t]*5;});
+  score+=candidate.rating*3;
+  return{score:Math.min(score,100),reasons:mg};
+}
+
+function computeCollabScore(candidate,likedList){
+  var li=new Set(likedList.map(function(m){return m.id;}));
+  var score=0;
+  USER_PROFILES.forEach(function(p){
+    var overlap=p.liked.filter(function(id){return li.has(id);}).length;
+    if(overlap>0&&p.also.indexOf(candidate.id)!==-1)score+=overlap*20;
+  });
+  score+=candidate.rating*2;
+  return{score:Math.min(score,100)};
+}
+
+function getRecommendations(){
+  var likedList=MOVIES.filter(function(m){return likedMovies.has(m.id);});
+  var section=document.getElementById('recsSection');
+  if(likedList.length===0&&likedGenres.size===0){
+    section.innerHTML='<p class="empty-state">Select a genre or like a film to begin your journey…</p>';
+    return;
+  }
+  var scored=CATALOG.map(function(candidate){
+    var c=computeContentScore(candidate,likedList);
+    var col=computeCollabScore(candidate,likedList);
+    var finalScore,methodLabel;
+    if(currentMethod==='content'){finalScore=c.score;methodLabel='Content';}
+    else if(currentMethod==='collab'){finalScore=col.score;methodLabel='Collaborative';}
+    else{finalScore=Math.round(c.score*0.55+col.score*0.45);methodLabel='Hybrid';}
+    return Object.assign({},candidate,{finalScore:finalScore,reasons:c.reasons,methodLabel:methodLabel});
+  });
+  scored.sort(function(a,b){return b.finalScore-a.finalScore;});
+  scored=scored.slice(0,6);
+  var maxScore=scored[0]?scored[0].finalScore:1;
+  section.innerHTML='<div class="recs-header">✦ Your Recommendations</div>'
+    +scored.map(function(m,i){
+      var pct=Math.round((m.finalScore/maxScore)*100);
+      var why=m.reasons.length?'Matches your taste in '+m.reasons.join(' & '):'Highly rated among viewers like you';
+      return '<div class="rec-card" style="animation-delay:'+(i*0.07)+'s">'
+        +'<div class="rec-emoji">'+m.emoji+'</div>'
+        +'<div class="rec-info">'
+          +'<div class="rec-title">'+m.title+'</div>'
+          +'<div class="rec-year">'+m.year+'</div>'
+          +'<div class="rec-why">'+why+'</div>'
+          +'<div class="rec-badges">'
+            +m.genres.map(function(g){return '<span class="badge badge-genre">'+g+'</span>';}).join('')
+            +'<span class="badge badge-method">'+m.methodLabel+'</span>'
+            +'<span class="badge badge-score">★ '+m.rating+'</span>'
+          +'</div>'
+        +'</div>'
+        +'<div class="score-bar-wrap">'
+          +'<div class="score-val">'+pct+'%</div>'
+          +'<div class="score-label">match</div>'
+          +'<div class="score-bar"><div class="score-fill" style="width:'+pct+'%"></div></div>'
+        +'</div>'
+        +'</div>';
+    }).join('');
+}
+
+renderGenres();
+renderMovies();
+</script>
+</body>
+</html>
